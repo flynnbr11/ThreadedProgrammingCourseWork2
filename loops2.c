@@ -8,7 +8,7 @@
 
 double a[N][N], b[N][N], c[N];
 int jmax[N];  
-
+int count =0;
 
 void init1(void);
 void init2(void);
@@ -100,23 +100,31 @@ void runloop(int loopid)  {
     int lo = myid*ipt;
     int hi = (myid+1)*ipt;
     if (hi > N) hi = N; 
-  
-    switch (loopid) { 
-       case 1: loop1chunk(lo,hi); break;
-       case 2: loop2chunk(lo,hi); break;
-    } 
+    
+    int total_iters = hi-lo;
+    int remaining = hi-lo;
+    while(remaining>0) {
+      int dist = ceil(remaining/nthreads);
+      hi = lo + dist;  
+      printf("on thread %d, lo = %d and high = %d. \n", myid, lo, hi);    
+      switch (loopid) { 
+          case 1: loop1chunk(lo,hi); break;
+          case 2: loop2chunk(lo,hi); break;
+      } 
+      lo = hi;
+      remaining = total_iters-lo;
+      printf("Remaining iterations: %d. \n", remaining);
+    }
   }
 }
 
 void loop1chunk(int lo, int hi) { 
   int i,j; 
-  
   for (i=lo; i<hi; i++){ 
-    for (j=N-1; j>i; j--){
-      a[i][j] += cos(b[i][j]);
-    } 
+     for (j=N-1; j>i; j--){
+       a[i][j] += cos(b[i][j]);
+     } 
   }
-
 } 
 
 
@@ -130,7 +138,7 @@ void loop2chunk(int lo, int hi) {
   for (i=lo; i<hi; i++){ 
     for (j=0; j < jmax[i]; j++){
       for (k=0; k<j; k++){ 
-	c[i] += (k+1) * log (b[i][j]) * rN2;
+      	c[i] += (k+1) * log (b[i][j]) * rN2;
       } 
     }
   }

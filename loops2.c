@@ -3,7 +3,7 @@
 
 
 #define N 729
-#define reps 100 
+#define reps 100
 #include <omp.h> 
 
 double a[N][N], b[N][N], c[N];
@@ -102,18 +102,20 @@ void runloop(int loopid)  {
     if (hi > N) hi = N; 
     
     int total_iters = hi-lo;
-    int remaining = hi-lo;
-    while(remaining>0) {
-      int dist = ceil(remaining/nthreads);
+		int remaining = hi-lo;
+		int dist = ceil(remaining/nthreads);
+		//printf("thread %d Total iters = %d and remaining = %d lo = %d hi = %d dist = %d \n",myid, total_iters, remaining, lo, hi, dist);
+    
+    while(remaining>0 || dist == 0) {
+      dist = floor(remaining/nthreads) +1;
       hi = lo + dist;  
-      printf("on thread %d, lo = %d and high = %d. \n", myid, lo, hi);    
       switch (loopid) { 
           case 1: loop1chunk(lo,hi); break;
           case 2: loop2chunk(lo,hi); break;
       } 
+	// 	      printf("thread = %d lo = %d, hi = %d, dist = %d rem = %d \n", myid, lo, hi, dist, remaining);
       lo = hi;
       remaining = total_iters-lo;
-      printf("Remaining iterations: %d. \n", remaining);
     }
   }
 }

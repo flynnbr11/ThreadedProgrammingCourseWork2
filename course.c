@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <math.h>
-
+#include<stdlib.h>
 
 #define N 729
 #define reps 1 //100
@@ -87,38 +87,146 @@ void init2(void){
  
 } 
 
+struct all_info {
+	int remaining;
+	int local_high;	
+	int thread_num;
+};
 
 void runloop(int loopid)  {
 
-#pragma omp parallel default(none) shared(loopid) 
+struct all_info *all_threads; 
+omp_lock_t *locks;
+int size_of_arrays;
+int count_finished_threads=0;
+int count_all_threads=0;
+int tracker=1;
+ //struct all_info *all_threads = (struct all_info)malloc(sizeof(all_threads)*nthreads);
+
+#pragma omp parallel default(none) private(size_of_arrays) shared(loopid, all_threads, locks, count_finished_threads, count_all_threads, tracker) 
   {
     int myid  = omp_get_thread_num();
     int nthreads = omp_get_num_threads(); 
+    size_of_arrays = sizeof(struct all_info)*nthreads;
+    (all_threads) = (struct all_info*) malloc(size_of_arrays);
+    all_threads[myid].thread_num=myid;
+    locks = malloc(size_of_arrays);   
     int ipt = (int) ceil((double)N/(double)nthreads); 
     int lo = myid*ipt;
     int hi = (myid+1)*ipt;
     if (hi > N) hi = N; 
 //	printf("thread %d has lo = %d and hi = %d \n", myid, lo, hi);
     int total_iters = hi-lo;
- 	 int remaining_iters = hi-lo;
+		int remaining_iters = hi-lo;
+		int remaining_iterations = hi;
     int dist = ceil(remaining_iters/nthreads);
     int counter=0;
-    while(remaining_iters>0) {
-      dist = floor( remaining_iters / nthreads ) + 1;
-      hi = lo + dist;  
+		int l;
+    for(l=0; l<nthreads; l++) {
+      omp_init_lock(&(locks[l]));
+    }
+    
+    while(remaining_iterations>0) {
+			      //if another thread has replaced remaining_iters since this thread finished its last chunk        
+      // does this need to be locked since not updating the value in the shared array? don't think it does   
+      omp_set_lock(&(locks[myid]));     
+      remaining_iters = all_threads[myid].remaining; 
+      lo = all_threads[myid].local_high;
+   // omp_unset_lock(&(locks[myid])); //sync in case another thread has stolen from me
+
+      dist = floor( remaining_iters / nthreads ) + 1;        
+      hi = lo + dist; 
+			remaining_iters = total_iters - hi;
+
+    // omp_set_lock(&(locks[myid]));     
+      all_threads[myid].local_high = hi;
+      all_threads[myid].remaining = remaining_iters;
+      omp_unset_lock(&(locks[myid])); 
+
 // 	printf("thread : %d lo = %d hi = %d \n", myid, lo, hi);
       switch (loopid) { 
           case 1: loop1chunk(lo,hi); break;
           case 2: loop2chunk(lo,hi); break;
       } 
       counter += hi-lo;
-      remaining_iters = total_iters - counter;
-      lo = hi;
-
+      remaining_iterations = total_iters - counter;
+//      lo = hi;
     }
-//    printf("Final counter on thread %d =  %d \n", myid, counter);
+	 count_all_threads +=counter;  
+   count_finished_threads +=1;
+  printf("Thread %d finished chunk with %d iters remaining. Now %d threads out of %d are finished. \n", myid, remaining_iterations, count_finished_threads, nthreads);
+	
+	while(tracker==1) {
+		  if(remaining_iterations <= 0 && count_finished_threads < nthreads) {
+				#pragma omp critical 
+				{
+					printf("thread %d in critical region \n", myid);
+					int max=0;
+					int thread_to_steal_from = nthreads+1;
+					int current_thread, steal_low, steal_high;
+					omp_set_lock(&locks[thread_to_steal_from]);	
+					int stolen_chunk;
+					int old_max_thread = thread_to_steal_from;
+			
+					for(current_thread =0 ; current_thread < nthreads; current_thread++) { 
+						omp_set_lock(&locks[current_thread]);
+						if(all_threads[current_thread].remaining > max) {
+							old_max_thread = thread_to_steal_from;
+							max = all_threads[current_thread].remaining; // reassign maximum remainder from any thread
+							thread_to_steal_from = current_thread; //update which thread is most loaded
+							printf("thread %d finds that thread %d is loaded  with %d remaining iters \n", myid, current_thread, max);
+						}
+						omp_unset_lock(&locks[old_max_thread]); //unlock old max thread
+						omp_unset_lock(&locks[current_thread]);
+						omp_set_lock(&locks[thread_to_steal_from]);
+					}
+					printf("outside for loop in critical region \n");
+					
+					if(thread_to_steal_from < nthreads) {
+							printf("thread %d finds thread %d to be most loaded \n", myid, thread_to_steal_from);
+						omp_set_lock(&locks[thread_to_steal_from]);
+							printf("after locking thread %d \n", thread_to_steal_from);
+							steal_low = all_threads[thread_to_steal_from].local_high;
+							steal_high = steal_low + ((all_threads[thread_to_steal_from].remaining)/nthreads);
+							stolen_chunk = steal_high - steal_low;
+							all_threads[thread_to_steal_from].remaining -= stolen_chunk; //change how many iterations are left now
+							all_threads[thread_to_steal_from].local_high = steal_high; //make sure owner thread starts from new upper limit
+						omp_unset_lock(&locks[thread_to_steal_from]);
+								
+						//We have now found the most loaded thread, and assigned it to thread_to_steal_from
+						 //Stop when we reach 0
+						if(stolen_chunk >0) {
+							switch (loopid) { 
+						    case 1: loop1chunk(steal_low,steal_high); break;
+						    case 2: loop2chunk(steal_low,steal_high); break;
+							} 
+						}
+					printf("Thread %d stole %d iterations from thread %d \n ", myid, stolen_chunk, thread_to_steal_from);
+
+					}
+					else {
+						printf( "thread %d did not steal any iterations \n", myid);
+						tracker=0;
+					}
+					printf("thread %d leaving critical region \n", myid);
+				}
+			}
+		}
   }
+  free( all_threads );
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 void loop1chunk(int lo, int hi) { 
   int i,j; 

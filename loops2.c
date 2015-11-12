@@ -3,13 +3,11 @@
 
 
 #define N 729
-#define reps 1 //100
+#define reps 100 //100
 #include <omp.h> 
 
 double a[N][N], b[N][N], c[N];
 int jmax[N];  
-int count =0;
-
 void init1(void);
 void init2(void);
 void runloop(int); 
@@ -116,7 +114,7 @@ void runloop(int loopid)  {
       counter += remaining_iters;
       lo = hi;
     }
-    printf("Final counter on thread %d =  %d \n", myid, counter);
+//    printf("Final counter on thread %d =  %d \n", myid, counter);
   }
 }
 

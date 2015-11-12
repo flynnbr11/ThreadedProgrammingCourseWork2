@@ -3,13 +3,11 @@
 
 
 #define N 729
-#define reps 100
+#define reps 1 //100
 #include <omp.h> 
 
 double a[N][N], b[N][N], c[N];
 int jmax[N];  
-int count =0;
-
 void init1(void);
 void init2(void);
 void runloop(int); 
@@ -100,23 +98,25 @@ void runloop(int loopid)  {
     int lo = myid*ipt;
     int hi = (myid+1)*ipt;
     if (hi > N) hi = N; 
-    
+//	printf("thread %d has lo = %d and hi = %d \n", myid, lo, hi);
     int total_iters = hi-lo;
-		int remaining = hi-lo;
-		int dist = ceil(remaining/nthreads);
-		//printf("thread %d Total iters = %d and remaining = %d lo = %d hi = %d dist = %d \n",myid, total_iters, remaining, lo, hi, dist);
-    
-    while(remaining>0 || dist == 0) {
-      dist = floor(remaining/nthreads) +1;
+ 	 int remaining_iters = hi-lo;
+    int dist = ceil(remaining_iters/nthreads);
+    int counter=0;
+    while(remaining_iters>0) {
+      dist = floor( remaining_iters / nthreads ) + 1;
       hi = lo + dist;  
+// 	printf("thread : %d lo = %d hi = %d \n", myid, lo, hi);
       switch (loopid) { 
           case 1: loop1chunk(lo,hi); break;
           case 2: loop2chunk(lo,hi); break;
       } 
-	// 	      printf("thread = %d lo = %d, hi = %d, dist = %d rem = %d \n", myid, lo, hi, dist, remaining);
+      counter += hi-lo;
+      remaining_iters = total_iters - counter;
       lo = hi;
-      remaining = total_iters-lo;
+
     }
+//    printf("Final counter on thread %d =  %d \n", myid, counter);
   }
 }
 

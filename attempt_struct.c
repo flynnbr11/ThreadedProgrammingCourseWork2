@@ -151,21 +151,22 @@ void runloop(int loopid)  {
           omp_unset_lock(&locks[myid]);
         }
   
-        if(loopid==1) {
           printf( "Thread %d count %d lo = %d hi = %d dist = %d remaining = %d \
           thread limit = %d \n", myid, counter, lo, hi, dist, remaining_iters, thread_max);
-        }
      // Sanity check print statement
-        switch (loopid) { 
-            case 1: loop1chunk(lo,hi); break;
-            case 2: loop2chunk(lo,hi); break;
-        } 
+				if(remaining_iters <= 0 ) { break;
+				else {
+		      switch (loopid) { 
+		          case 1: loop1chunk(lo,hi); break;
+		          case 2: loop2chunk(lo,hi); break;
+		      } 
+				}
         counter ++;
         //remaining_iters needs to be set by array & update array when done within this loop
  //       remaining_iters = thread_max - hi;
         lo = hi;
         omp_set_lock(&locks[myid]);
-        if(all_threads[myid].remaining != remaining_iters) printf("problem with sync remaining");
+        if(all_threads[myid].remaining != remaining_iters && counter >1) printf("problem with sync remaining \n");
         remaining_iters -= dist;
         all_threads[myid].remaining=remaining_iters; 
         omp_unset_lock(&locks[myid]);

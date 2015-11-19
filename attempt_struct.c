@@ -126,13 +126,15 @@ void runloop(int loopid)  {
       int remaining_iters = hi-lo;
       int dist = ceil(remaining_iters/nthreads);
       int counter=0;
+      all_threads[myid].remaining = hi;
       hi = lo;
-      all_threads[myid].remaining = remaining_iters;
+
+      all_threads[myid].local_high =lo;
       while(all_threads[myid].remaining > 0) {
-        omp_set_lock(&locks[myid]); 
-        printf("thread %d locked \n", myid);
         //should this be here? will this wait until the next code has exclusive access to locks[myid]?
- /*       if(all_threads[myid].change_flag == 1) { 
+ /*
+ 				omp_set_lock(&locks[myid]);
+       if(all_threads[myid].change_flag == 1) { 
           printf("Thread %d found flag raised so now re-assigning values \n", myid);
           printf("remaining in array = %d \n", all_threads[myid].remaining);
           lo = all_threads[myid].local_high;
@@ -156,27 +158,34 @@ void runloop(int loopid)  {
           omp_unset_lock(&locks[myid]);
         }
 	*/
-
+				omp_set_lock(&locks[myid]);
 				lo = all_threads[myid].local_high;
 				dist = floor( all_threads[myid].remaining / nthreads ) + 1;
 				hi = lo + dist;  
 				all_threads[myid].local_low = lo; 
 				all_threads[myid].local_high = hi;
-				all_threads[myid].remaining -= dist;
 				omp_unset_lock(&locks[myid]);
 		
-   //     printf( "Thread %d count %d lo = %d hi = %d dist = %d remaining = %d \
+        printf( "Thread %d count %d lo = %d hi = %d dist = %d remaining = %d \
         thread limit = %d \n", myid, counter, lo, hi, dist, remaining_iters, thread_max);
      // Sanity check print statement
-				if(remaining_iters <= 0 ) { break; }
 				if(hi > N) hi = N;
+				if(all_threads[myid].remaining <= 0 ) {
+					printf("Breaking \n");
+					break; 
+				}
 				else {
 		      switch (loopid) { 
 		          case 1: loop1chunk(lo,hi); break;
 		          case 2: loop2chunk(lo,hi); break;
 		      } 
+		      
+				omp_set_lock(&locks[myid]);     
+    		all_threads[myid].remaining -= dist;
+				omp_unset_lock(&locks[myid]);
+		
 				}
-   
+				counter ++;   
       } // end while loop
 
     omp_set_lock(&locks[myid]);
@@ -186,7 +195,7 @@ void runloop(int loopid)  {
     finished_threads_counter ++;  
     printf("Thread %d has finished allocated work. %d threads finished out of %d \n",myid, finished_threads_counter, nthreads);
     //Now to set up critical region to steal work
-    if(finished_threads_counter < nthreads ) { //sanity check
+  /*  if(finished_threads_counter < nthreads ) { //sanity check
       #pragma omp critical
       {
         printf("Thread %d has entered the critical region\n", myid);
@@ -259,11 +268,14 @@ void runloop(int loopid)  {
       } 
     }
 
-
+*/
   } // close parallel region
   free(all_threads);
   free(locks);
-}
+
+
+
+} //end runloop function
 
 void loop1chunk(int lo, int hi) { 
   int i,j; 

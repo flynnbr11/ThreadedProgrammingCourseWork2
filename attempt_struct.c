@@ -120,58 +120,65 @@ void runloop(int loopid)  {
       for(l=0; l<nthreads; l++) {
         omp_init_lock(&(locks[l]));
       }
+      all_threads[myid].thread_upper_lim = hi;
       int steal_low=0; int steal_high=0; int steal_dist=0;
       int total_iters = hi-lo;
       int remaining_iters = hi-lo;
       int dist = ceil(remaining_iters/nthreads);
       int counter=0;
-      
-      
-      
-      while(remaining_iters>0) {
-        dist = floor( remaining_iters / nthreads ) + 1;
-        hi = lo + dist;  
-        // 	printf("thread : %d lo = %d hi = %d \n", myid, lo, hi);
-        // in critical region, change flag if you steal from this thread
-        omp_set_lock(&locks[myid]); //should this be here? will this wait until the next code has exclusive access to locks[myid]?
-        if(all_threads[myid].change_flag == 1) { 
+      hi = lo;
+      all_threads[myid].remaining = remaining_iters;
+      while(all_threads[myid].remaining > 0) {
+        omp_set_lock(&locks[myid]); 
+        printf("thread %d locked \n", myid);
+        //should this be here? will this wait until the next code has exclusive access to locks[myid]?
+ /*       if(all_threads[myid].change_flag == 1) { 
           printf("Thread %d found flag raised so now re-assigning values \n", myid);
           printf("remaining in array = %d \n", all_threads[myid].remaining);
           lo = all_threads[myid].local_high;
           dist = floor(all_threads[myid].remaining/nthreads) + 1;
           hi = lo + dist;
           all_threads[myid].change_flag = 0;
+          all_threads[myid].local_low = lo;
+          all_threads[myid].local_high = hi;
+          all_threads[myid].remaining = remaining_iters;        
+
           omp_unset_lock(&locks[myid]);
           printf( "after steal, thread %d Reassigned values lo = %d hi = %d, dist = %d \n", myid, lo, hi, dist);
         }
         else {
+					lo = hi;
+					dist = floor( all_threads[myid].remaining / nthreads ) + 1;
+					hi = lo + dist;  
           all_threads[myid].local_low = lo;
           all_threads[myid].local_high = hi;
           all_threads[myid].remaining = remaining_iters;        
           omp_unset_lock(&locks[myid]);
         }
-  
-          printf( "Thread %d count %d lo = %d hi = %d dist = %d remaining = %d \
-          thread limit = %d \n", myid, counter, lo, hi, dist, remaining_iters, thread_max);
+	*/
+
+				lo = all_threads[myid].local_high;
+				dist = floor( all_threads[myid].remaining / nthreads ) + 1;
+				hi = lo + dist;  
+				all_threads[myid].local_low = lo; 
+				all_threads[myid].local_high = hi;
+				all_threads[myid].remaining -= dist;
+				omp_unset_lock(&locks[myid]);
+		
+   //     printf( "Thread %d count %d lo = %d hi = %d dist = %d remaining = %d \
+        thread limit = %d \n", myid, counter, lo, hi, dist, remaining_iters, thread_max);
      // Sanity check print statement
-				if(remaining_iters <= 0 ) { break;
+				if(remaining_iters <= 0 ) { break; }
+				if(hi > N) hi = N;
 				else {
 		      switch (loopid) { 
 		          case 1: loop1chunk(lo,hi); break;
 		          case 2: loop2chunk(lo,hi); break;
 		      } 
 				}
-        counter ++;
-        //remaining_iters needs to be set by array & update array when done within this loop
- //       remaining_iters = thread_max - hi;
-        lo = hi;
-        omp_set_lock(&locks[myid]);
-        if(all_threads[myid].remaining != remaining_iters && counter >1) printf("problem with sync remaining \n");
-        remaining_iters -= dist;
-        all_threads[myid].remaining=remaining_iters; 
-        omp_unset_lock(&locks[myid]);
-    
+   
       } // end while loop
+
     omp_set_lock(&locks[myid]);
     all_threads[myid].remaining=0;  //to be sure, shouldn't make a difference
     omp_unset_lock(&locks[myid]);
@@ -188,33 +195,35 @@ void runloop(int loopid)  {
         int max_remaining=0;
         int old_max_thread;
         int found_new_max=0;
+        steal_high =0;
         for(current_thread=0; current_thread < nthreads; current_thread++) { 
           printf("Inside for loop with current thread = %d \n", current_thread);
           omp_set_lock(&locks[current_thread]);
           if(all_threads[current_thread].remaining > max_remaining) { 
             printf("Inside if loop \n");
             max_remaining = all_threads[current_thread].remaining;
-            old_max_thread = thread_to_steal_from;
+   //         old_max_thread = thread_to_steal_from;
             thread_to_steal_from = current_thread;
             printf(" if-loop: max = %d on thread %d \n", max_remaining, current_thread);
-            omp_unset_lock(&locks[current_thread]);
-            omp_unset_lock(&locks[old_max_thread]);
+       //    omp_unset_lock(&locks[current_thread]);
+       //    omp_unset_lock(&locks[old_max_thread]);
             printf("After unset\n");
-            omp_set_lock(&locks[thread_to_steal_from]);
+       //      omp_set_lock(&locks[thread_to_steal_from]);
            
             printf("After lock reset\n");
             found_new_max = 1;
             printf("New maximum found on thread %d, remaining = %d \n", thread_to_steal_from, max_remaining);
           } //close if loop for new max found
           else {
-            omp_unset_lock(&locks[current_thread]);
+     //       omp_unset_lock(&locks[current_thread]);
             printf("Did not enter if-loop for thread %d\n", current_thread);
           }
+          
         }
         
         if(found_new_max == 0) {
-        omp_unset_lock(&locks[0]);
-        printf("Thread %d found nothing to steal from\n", myid);
+		      //omp_unset_lock(&locks[0]);
+		      printf("Thread %d found nothing to steal from\n", myid);
         }
         else { //i.e if found_new_max = 1 => have raised the flag and need to update variables in thread to steal from
           printf("thread %d should steal from thread %d \n", myid, thread_to_steal_from);        
@@ -222,21 +231,27 @@ void runloop(int loopid)  {
           steal_low = all_threads[thread_to_steal_from].local_high;
           steal_dist = floor(all_threads[thread_to_steal_from].remaining / nthreads) +1;
           steal_high = steal_low + steal_dist;
-          all_threads[thread_to_steal_from].local_low = steal_high;
-          all_threads[thread_to_steal_from].local_high = steal_low + steal_dist;
-          all_threads[thread_to_steal_from].remaining = all_threads[thread_to_steal_from].remaining - steal_dist;
+          all_threads[thread_to_steal_from].local_low = steal_low;
+          all_threads[thread_to_steal_from].local_high = steal_high;
+          all_threads[thread_to_steal_from].remaining -= steal_dist;
           if(all_threads[thread_to_steal_from].remaining <=0) all_threads[thread_to_steal_from].remaining =0;
           printf("Thread %d stealing %d from thread %d; from lo = %d to hi =%d \n", myid, steal_dist, thread_to_steal_from, steal_low, steal_high);
-          omp_unset_lock(&locks[thread_to_steal_from]);
+          //omp_unset_lock(&locks[thread_to_steal_from]);
           
           //run loop for steal_low to steal_high
         }
+        
+			for(current_thread=0; current_thread<nthreads; current_thread ++) {
+ 				omp_unset_lock(&locks[current_thread]);					
+			}
+      
+        
       printf("thread %d leaving critical region \n", myid);
       }// end critical region
     }    //close if(finished counter)
     else printf("Thread %d not entering critical region because %d threads have already finished \n", myid, finished_threads_counter);
     
-    if(steal_high >0) { 
+    if(steal_high > 0) { 
       printf("Thread %d doing iterations %d to %d\n", myid, steal_low, steal_high);
       switch (loopid) { 
         case 1: loop1chunk(steal_low, steal_high); break;

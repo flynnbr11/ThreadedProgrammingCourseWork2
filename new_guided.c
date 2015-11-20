@@ -4,7 +4,7 @@
 #include<stdlib.h>
 
 #define N 729
-#define reps 1 //100
+#define reps 100
 #include <omp.h> 
 
 double a[N][N], b[N][N], c[N];
@@ -17,6 +17,7 @@ void loop2chunk(int, int);
 void valid1(void);
 void valid2(void);
 
+void mywork(int);
 
 int main(int argc, char *argv[]) { 
 
@@ -125,65 +126,74 @@ void runloop(int loopid)  {
     //int dist = ceil(remaining_iters/nthreads);
     //if(dist==0) dist = 1;
 		//hi = lo;
-		int work_remaining, thread, most_loaded_thread, biggest_remaining, end_point;
+		int work_remaining, thread, biggest_remaining, end_point;
 		int value = 1;
+		int most_loaded_thread=0;
 		int i;
-		for(i=0; i<nthreads; i++) {
-			printf( "Starting remainder for thread %d = %d \n", i, remainders[i]);
-		}
 	  thread_maxima[myid] = hi;
 		remainders[myid] = hi - lo;    
-	int finished_work= 0;
+		int finished_threads = 0;
+		
+		#pragma omp barrier
+		int finished_work= 0;
 		while ( finished_work == 0 ) {  
-			#pragma omp critical 
-			{
-				printf("thread %d in critical region\n remainder = %d \n", myid, remainders[myid]);
-				biggest_remaining = 0;			
-				work_remaining = 0;
-				remaining_iters = remainders[myid];
-				if(remaining_iters > 0) { 
-					lo = thread_maxima[myid] - remaining_iters;
-					dist = (int) ceil( remaining_iters / nthreads );
-					if(dist == 0 ) dist= 1;
-					
-					hi = lo + dist;
-					if(hi > thread_upper_lim) hi = thread_upper_lim; 
-					counter += dist;
-					remaining_iters -= dist;
-					remainders[myid] = remaining_iters;
-					work_remaining = 1;
-					printf("without stealing, Thread %d going %d to %d leaving %d \n", myid, lo,hi, remainders[myid]);
-				} 
-					
-				else if( remainders[myid] <= 0 ) {
-					for( thread = 0 ; thread < nthreads; thread++ ) { 
-						if(remainders[thread] > biggest_remaining ) {
-							biggest_remaining = remainders[thread];
-							end_point = thread_maxima[thread];
-							most_loaded_thread = thread;
-							work_remaining = 1;
-						}
-					}
-					if(work_remaining == 1) {
-						lo = end_point - biggest_remaining;
-//						printf("most loaded thread = %d, thread %d doing  new lo =  %d to hi = %d \n", most_loaded_thread, myid, lo, hi);
-
-						dist = (int) ceil ((double) biggest_remaining / (double) nthreads);
-						if(dist == 0) dist = 1;
+			work_remaining=0;
+			
+			if(finished_threads == 0) {
+				if (remainders[myid] > 0 ) {
+						lo = thread_maxima[myid] - remainders[myid];
+						dist = (int) ceil( remainders[myid] / nthreads );
+						if(dist == 0 ) dist= 1;
 						hi = lo + dist;
-						if( hi > thread_maxima[most_loaded_thread] ) hi = thread_maxima[most_loaded_thread] ;
-						remainders[most_loaded_thread] -= dist;
-						printf("Steal : new lo = %d, dist=%d hi=%d rem = %d on thread %d from %d \n", lo, dist, hi, remainders[most_loaded_thread], myid, most_loaded_thread);
-
-					}						
-					
-				}
+						if(hi > thread_upper_lim) hi = thread_upper_lim; 
+						counter += dist;
+						remainders[myid] -= dist;
+						if(remainders[myid] <= 0 ) finished_threads ++;
+						work_remaining=1;
+					}
+				} // will all work in parallel before anyone finishes their initial chunk
 				
-				else printf("Thread %d lost \n", myid);
-			} //end critical region
+			else {
+				#pragma omp critical 
+				{
+					most_loaded_thread = myid; // so that rem[thread] > rem[most_loaded] starts by comparing to 0
+					work_remaining = 0;
+					if(remainders[myid] > 0) { 
+						lo = thread_maxima[myid] - remainders[myid];
+						dist = (int) ceil( remainders[myid] / nthreads );
+						if(dist == 0 ) dist= 1;
+					
+						hi = lo + dist;
+						if(hi > thread_upper_lim) hi = thread_upper_lim; 
+						counter += dist;
+						remainders[myid] -= dist;
+						work_remaining = 1;
+					} 
+					
+					else if( remainders[myid] <= 0 ) {
+						for( thread = 0 ; thread < nthreads; thread++ ) { 
+							if(remainders[thread] > remainders[most_loaded_thread] ) {
+								most_loaded_thread = thread;
+								work_remaining = 1;
+							}
+						}
+						if(work_remaining == 1) {
+							lo = thread_maxima[most_loaded_thread] - remainders[most_loaded_thread];
+							dist = (int) ceil ((double) remainders[most_loaded_thread] / (double) nthreads);
+							if(dist == 0) dist = 1;
+							hi = lo + dist;
+							if( hi > thread_maxima[most_loaded_thread] ) hi = thread_maxima[most_loaded_thread] ;
+							remainders[most_loaded_thread] -= dist;
+						}						
+					
+					}
+				
+					else printf("Thread %d lost \n", myid);
+				} //end critical region
+			}	
 			
 			if(work_remaining == 1 ) {	
-				printf("Thread %d going to do %d to %d\n", myid, lo, hi);		
+	//			printf("Thread %d going to do %d to %d\n", myid, lo, hi);		
 				switch (loopid) { 
 						case 1: loop1chunk(lo,hi); break;
 						case 2: loop2chunk(lo,hi); break;
@@ -191,8 +201,6 @@ void runloop(int loopid)  {
 			}
 			else {
 				finished_work = 1;
-//				printf("Thread %d breaking while loop \n", myid);
-//				break;
 			}
 		} // end while 1
  #pragma omp single
@@ -203,6 +211,13 @@ void runloop(int loopid)  {
 	} // end parallel region
 
 } // end runloop function
+
+
+void mywork(int myid) {
+
+
+}
+
 
 void loop1chunk(int lo, int hi) { 
   int i,j; 

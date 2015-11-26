@@ -115,8 +115,8 @@ void runloop(int loopid)  {
     int lo = myid*ipt;
     int hi = (myid+1)*ipt;
     if (hi > N) hi = N; 
-    int thread_upper_lim = hi;
-    int total_iters= hi-lo;
+//    int thread_upper_lim = hi;
+ //   int total_iters= hi-lo;
 		#pragma omp single
     {
       remainders = (int*) malloc(sizeof(int)*nthreads); 
@@ -140,16 +140,18 @@ void runloop(int loopid)  {
 			work_remaining=0;
 			
 			if(finished_threads == 0) {
-				if (remainders[myid] > 0 ) {
+				if ( remainders[myid] > 0 ) {
 						lo = thread_maxima[myid] - remainders[myid];
 						dist = (int) ceil( remainders[myid] / nthreads );
 						if(dist == 0 ) dist= 1;
 						hi = lo + dist;
-						if(hi > thread_upper_lim) hi = thread_upper_lim; 
-						counter += dist;
-						remainders[myid] -= dist;
-						if(remainders[myid] <= 0 ) finished_threads ++;
+						if(hi > thread_maxima[myid]) hi = thread_maxima[myid]; 
+						remainders[myid] = thread_maxima[myid] - hi;
 						work_remaining=1;
+						#pragma omp critical
+						{
+							if(remainders[myid] <= 0 ) finished_threads ++;
+						}
 					}
 				} // will all work in parallel before anyone finishes their initial chunk
 				
@@ -161,13 +163,11 @@ void runloop(int loopid)  {
 					if(remainders[myid] > 0) { 
 						lo = thread_maxima[myid] - remainders[myid];
 						dist = (int) ceil( remainders[myid] / nthreads );
-						if(dist == 0 ) dist= 1;
-					
+						if( dist == 0 ) dist= 1;
 						hi = lo + dist;
-						if(hi > thread_upper_lim) hi = thread_upper_lim; 
-						counter += dist;
-						remainders[myid] -= dist;
-						work_remaining = 1;
+						if(hi > thread_maxima[myid]) hi = thread_maxima[myid]; 
+						remainders[myid] = thread_maxima[myid] - hi;
+						work_remaining = 1; //flag to indicate program isn't finished yet
 					} 
 					
 					else if( remainders[myid] <= 0 ) {
@@ -183,12 +183,10 @@ void runloop(int loopid)  {
 							if(dist == 0) dist = 1;
 							hi = lo + dist;
 							if( hi > thread_maxima[most_loaded_thread] ) hi = thread_maxima[most_loaded_thread] ;
-							remainders[most_loaded_thread] -= dist;
+							remainders[most_loaded_thread] = thread_maxima[most_loaded_thread] - hi;
 						}						
 					
 					}
-				
-					else printf("Thread %d lost \n", myid);
 				} //end critical region
 			}	
 			
